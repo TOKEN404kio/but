@@ -55,7 +55,7 @@ client.on('messageCreate', async (message) => {
             }
         );
 
-        // Fixed data path array targeting choices[0] directly
+        // This exact array path matches GitHub's API response structure perfectly
         htmlCode = response.data.choices[0].message.content.trim();
 
         if (htmlCode.includes('```')) {
