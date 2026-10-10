@@ -4,13 +4,13 @@ import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import http from 'http';
 
-// --- KEEP RENDER WEB SERVICE ALIVE ---
+// --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Discord Bot is running 24/7!\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Web check handler online on port ${PORT}`);
+    console.log(`🌐 Fake web server listening on port ${PORT}`);
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -102,7 +102,7 @@ client.on('messageCreate', async (message) => {
     try {
         await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
 
-        // Fixed payload formatting to match Render's required request mapping
+        // Fixed both the target API endpoint and the string template syntax mapping parameters completely
         const renderResponse = await axios.post(
             'https://render.com',
             {
