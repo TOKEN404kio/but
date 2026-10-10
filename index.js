@@ -4,6 +4,17 @@ import ModelClient from '@azure-rest/ai-inference';
 import { AzureKeyCredential } from '@azure/core-auth';
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
+import http from 'http'; // Built-in Node tool
+
+// --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
+const PORT = process.env.PORT || 10000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Discord Bot is running 24/7!\n');
+}).listen(PORT, () => {
+    console.log(`🌐 Fake web server listening on port ${PORT}`);
+});
+// ----------------------------------------------
 
 const aiClient = ModelClient(
   "https://azure.com",
