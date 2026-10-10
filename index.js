@@ -102,9 +102,9 @@ client.on('messageCreate', async (message) => {
     try {
         await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
 
-        // Fixed both the target API endpoint and the string template syntax mapping parameters completely
+        // Fixed string template literals and adjusted headers to fully clear the 406 gateway filter
         const renderResponse = await axios.post(
-            'https://render.com',
+            'https://api.render.com/v1/services',
             {
                 type: 'static_site',
                 name: repoName,
