@@ -33,7 +33,7 @@ client.on('messageCreate', async (message) => {
     let repoName = `user-site-${Date.now()}`;
     let owner = '';
 
-    // === STEP 1: AI GENERATION (Using your GitHub Token!) ===
+    // === STEP 1: AI GENERATION ===
     try {
         const response = await axios.post(
             'https://azure.com',
@@ -55,6 +55,7 @@ client.on('messageCreate', async (message) => {
             }
         );
 
+        // Fixed data path array targeting choices[0] directly
         htmlCode = response.data.choices[0].message.content.trim();
 
         if (htmlCode.includes('```')) {
