@@ -4,13 +4,13 @@ import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import http from 'http';
 
-// --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
+// --- KEEP RENDER WEB SERVICE ALIVE ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Discord Bot is running 24/7!\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Fake web server listening on port ${PORT}`);
+    console.log(`🌐 Web check handler online on port ${PORT}`);
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
@@ -55,13 +55,11 @@ client.on('messageCreate', async (message) => {
             }
         );
 
-        // BULLETPROOF CHECK: Dynamically inspect the incoming data structure to stop the '0' reading crash permanently
         if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
             htmlCode = response.data.choices[0].message.content.trim();
         } else if (response.data && response.data.content) {
             htmlCode = response.data.content.trim();
         } else {
-            // If the structure is completely weird, log the text response directly
             htmlCode = typeof response.data === 'string' ? response.data.trim() : JSON.stringify(response.data);
         }
 
@@ -104,6 +102,7 @@ client.on('messageCreate', async (message) => {
     try {
         await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
 
+        // Fixed payload formatting to match Render's required request mapping
         const renderResponse = await axios.post(
             'https://render.com',
             {
@@ -111,19 +110,20 @@ client.on('messageCreate', async (message) => {
                 name: repoName,
                 repo: `https://github.com{repoName}`,
                 autoDeploy: 'yes',
-                serviceDetails: {
-                    publishDir: '.' 
+                staticSiteDetails: {
+                    publishDir: '.'
                 }
             },
             {
                 headers: {
-                    Authorization: `Bearer \${process.env.RENDER_API_KEY}`,
-                    'Content-Type': 'application/json'
+                    'Authorization': `Bearer \${process.env.RENDER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 }
             }
         );
 
-        const liveUrl = renderResponse.data.serviceDetails.url || `https://\${repoName}.onrender.com`;
+        const liveUrl = renderResponse.data.url || `https://\${repoName}.onrender.com`;
 
         await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{repoName}\n🌐 **Live Link:** \${liveUrl}`);
 
