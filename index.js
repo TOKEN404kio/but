@@ -66,7 +66,7 @@ client.on('messageCreate', async (message) => {
         }
     } catch (aiError) {
         console.error("AI FAILED:", aiError);
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n\${aiError.message}\n\`\`\`\n*Tip: Check if your GITHUB_TOKEN environment variable is set up correctly in Render.*`);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n\${aiError.message || aiError}\n\`\`\`\n*Tip: Check if your GITHUB_TOKEN environment variable is set up correctly in Render.*`);
     }
 
     // === DIAGNOSTIC STEP 2: GITHUB PUSH ===
@@ -92,7 +92,7 @@ client.on('messageCreate', async (message) => {
         });
     } catch (githubError) {
         console.error("GITHUB FAILED:", githubError);
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n\${githubError.message}\n\`\`\`\n*Tip: Ensure your GitHub Token has full 'repo' permission checkboxes enabled.*`);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n\${githubError.message || githubError}\n\`\`\`\n*Tip: Ensure your GitHub Token has full 'repo' permission checkboxes enabled.*`);
     }
 
     // === DIAGNOSTIC STEP 3: RENDER DEPLOYMENT ===
