@@ -15,7 +15,7 @@ http.createServer((req, res) => {
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const PREFIX = '!generate';
-const OWNER_ID = '1520467898995577078'; // Your explicit User ID
+const OWNER_ID = '1520467898995577078'; // Your User ID
 
 client.once('ready', () => {
     console.log(`🤖 Private Admin Diagnostic Bot Online!`);
@@ -40,7 +40,6 @@ client.on('messageCreate', async (message) => {
     async function handlePipelineError(errorObj, stepNumber, stepName) {
         console.error(`CRASH AT STEP \${stepNumber}:`, errorObj);
 
-        // Gather exhaustive metadata about the environment crash state
         const errorStack = errorObj.stack || "No call stack available";
         const axiosDump = errorObj.config ? {
             targetUrl: errorObj.config.url,
@@ -49,20 +48,22 @@ client.on('messageCreate', async (message) => {
             authHeaderPresent: !!errorObj.config.headers?.['Authorization']
         } : "Not an Axios network request error";
 
-        const diagnosticPayload = `🚨 **DEEP DIAGNOSTIC REPORT (STEP \({stepNumber} -\){stepName})**\n` +
-            `👤 **Triggered By:** <@\({message.author.id}> (\){message.author.username})\n` +
+        const diagnosticPayload = `🚨 **DEEP DIAGNOSTIC REPORT (STEP stepNumber - {stepName})**\n` +
+            `👤 **Triggered By:** <@message.author.id> ({message.author.username})\n` +
             `💬 **Prompt Used:** \`${prompt}\`\n\n` +
             `❌ **Raw Message:** \`${errorObj.message || errorObj}\`\n` +
             `📂 **Network Trace:**\`\`\`json\n${JSON.stringify(axiosDump, null, 2)}\n\`\`\`\n` +
             `📌 **Engine Call Stack:**\`\`\`text\n${errorStack.slice(0, 1000)}\n\`\`\``;
 
-        // If YOU triggered it, show the deep error directly to you via an Ephemeral message interface
+        // FIXED: Direct routing straight to your DMs so it never disappears
         if (isOwner) {
-            await statusMessage.delete().catch(() => {});
-            return await message.channel.send({
-                content: diagnosticPayload,
-                ephemeral: true // Forces visibility strictly to you
-            });
+            try {
+                await message.author.send(diagnosticPayload);
+                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** I have sent the deep technical logs straight to your private DMs! 📩`);
+            } catch (dmErr) {
+                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** I tried to DM you the logs, but your private DMs are closed! Change your Discord privacy settings.`);
+            }
+            return;
         }
 
         // If a general user triggered it, show a clean message with a button to send to you
@@ -78,10 +79,9 @@ client.on('messageCreate', async (message) => {
             components: [row]
         });
 
-        // Setup a temporary button event listener to route the text directly to your DMs
         const collector = publicAlert.createMessageComponentCollector({
             componentType: ComponentType.Button,
-            time: 60000 // Button active for 1 minute
+            time: 60000 
         });
 
         collector.on('collect', async (interaction) => {
