@@ -1,23 +1,24 @@
 import 'dotenv/config';
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } from 'discord.js';
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import http from 'http';
 
-// --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
+// --- KEEP RENDER WEB SERVICE ALIVE ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Discord Bot is running 24/7!\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Fake web server listening on port ${PORT}`);
+    console.log(`🌐 Fake web server listening on port \${PORT}`);
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const PREFIX = '!generate';
+const OWNER_ID = '1520467898995577078'; // Your explicit User ID
 
 client.once('ready', () => {
-    console.log(`🤖 Bot is online and ready using GitHub's Built-in AI!`);
+    console.log(`🤖 Private Admin Diagnostic Bot Online!`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -28,10 +29,72 @@ client.on('messageCreate', async (message) => {
         return message.reply('Please provide a description!');
     }
 
+    const isOwner = message.author.id === OWNER_ID;
     const statusMessage = await message.reply('⏳ **Step 1/3:** Asking GitHub AI to write the raw code...');
+    
     let htmlCode = '';
-    let repoName = `user-site-${Date.now()}`;
+    let repoName = `user-site-\${Date.now()}`;
     let owner = '';
+
+    // === FUNCTION TO CAPTURE DEEP SYSTEM DIAGNOSTICS ===
+    async function handlePipelineError(errorObj, stepNumber, stepName) {
+        console.error(`CRASH AT STEP \${stepNumber}:`, errorObj);
+
+        // Gather exhaustive metadata about the environment crash state
+        const errorStack = errorObj.stack || "No call stack available";
+        const axiosDump = errorObj.config ? {
+            targetUrl: errorObj.config.url,
+            methodUsed: errorObj.config.method,
+            sentPayload: errorObj.config.data,
+            authHeaderPresent: !!errorObj.config.headers?.['Authorization']
+        } : "Not an Axios network request error";
+
+        const diagnosticPayload = `🚨 **DEEP DIAGNOSTIC REPORT (STEP \({stepNumber} -\){stepName})**\n` +
+            `👤 **Triggered By:** <@\({message.author.id}> (\){message.author.username})\n` +
+            `💬 **Prompt Used:** \`${prompt}\`\n\n` +
+            `❌ **Raw Message:** \`${errorObj.message || errorObj}\`\n` +
+            `📂 **Network Trace:**\`\`\`json\n${JSON.stringify(axiosDump, null, 2)}\n\`\`\`\n` +
+            `📌 **Engine Call Stack:**\`\`\`text\n${errorStack.slice(0, 1000)}\n\`\`\``;
+
+        // If YOU triggered it, show the deep error directly to you via an Ephemeral message interface
+        if (isOwner) {
+            await statusMessage.delete().catch(() => {});
+            return await message.channel.send({
+                content: diagnosticPayload,
+                ephemeral: true // Forces visibility strictly to you
+            });
+        }
+
+        // If a general user triggered it, show a clean message with a button to send to you
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('send_to_owner')
+                .setLabel('📩 Send Error Report to Owner')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        const publicAlert = await statusMessage.edit({
+            content: `❌ **An unexpected error occurred while compiling your site build at Step ${stepNumber}.** The administrator has been logged.`,
+            components: [row]
+        });
+
+        // Setup a temporary button event listener to route the text directly to your DMs
+        const collector = publicAlert.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            time: 60000 // Button active for 1 minute
+        });
+
+        collector.on('collect', async (interaction) => {
+            try {
+                const adminUser = await client.users.fetch(OWNER_ID);
+                await adminUser.send(diagnosticPayload);
+                await interaction.reply({ content: '✅ Diagnostics have been securely sent to the owner\'s private DMs!', ephemeral: true });
+            } catch (dmErr) {
+                console.error("DM Routing Failed:", dmErr);
+                await interaction.reply({ content: '❌ Could not send DM. Please check if the owner has DMs opened.', ephemeral: true });
+            }
+        });
+    }
 
     // === STEP 1: AI GENERATION ===
     try {
@@ -40,10 +103,7 @@ client.on('messageCreate', async (message) => {
             {
                 model: "meta-llama-3.3-70b-instruct",
                 messages: [
-                    { 
-                        role: "system", 
-                        content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code block formatting like ```html. Start directly with <!DOCTYPE html>." 
-                    },
+                    { role: "system", content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code blocks. Start directly with <!DOCTYPE html>." },
                     { role: "user", content: prompt }
                 ]
             },
@@ -57,25 +117,20 @@ client.on('messageCreate', async (message) => {
 
         if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
             htmlCode = response.data.choices[0].message.content.trim();
-        } else if (response.data && response.data.content) {
-            htmlCode = response.data.content.trim();
         } else {
-            htmlCode = typeof response.data === 'string' ? response.data.trim() : JSON.stringify(response.data);
+            throw new Error(`Unexpected AI JSON response format: ${JSON.stringify(response.data)}`);
         }
 
         if (htmlCode.includes('```')) {
             htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
         }
     } catch (aiError) {
-        console.error("AI FAILED:", aiError);
-        const errMsg = aiError.response?.data?.message || aiError.message;
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n${errMsg}\n\`\`\``);
+        return await handlePipelineError(aiError, 1, "AI Generation Engine");
     }
 
     // === STEP 2: GITHUB PUSH ===
     try {
         await statusMessage.edit('⏳ **Step 2/3:** Creating a new GitHub repository...');
-        
         const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
         
         const repoSetup = await octokit.repos.createForAuthenticatedUser({
@@ -94,21 +149,19 @@ client.on('messageCreate', async (message) => {
             content: Buffer.from(htmlCode).toString('base64')
         });
     } catch (githubError) {
-        console.error("GITHUB FAILED:", githubError);
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n${githubError.message}\n\`\`\``);
+        return await handlePipelineError(githubError, 2, "GitHub Repository Infrastructure");
     }
 
     // === STEP 3: RENDER DEPLOYMENT ===
     try {
         await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
 
-        // Fixed string template literals and adjusted headers to fully clear the 406 gateway filter
         const renderResponse = await axios.post(
-            'https://api.render.com/v1/services',
+            'https://render.com',
             {
                 type: 'static_site',
                 name: repoName,
-                repo: `https://github.com{repoName}`,
+                repo: `https://github.com{owner}/${repoName}`,
                 autoDeploy: 'yes',
                 staticSiteDetails: {
                     publishDir: '.'
@@ -116,21 +169,18 @@ client.on('messageCreate', async (message) => {
             },
             {
                 headers: {
-                    'Authorization': `Bearer \${process.env.RENDER_API_KEY}`,
+                    'Authorization': `Bearer ${process.env.RENDER_API_KEY}`,
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 }
             }
         );
 
-        const liveUrl = renderResponse.data.url || `https://\${repoName}.onrender.com`;
-
-        await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{repoName}\n🌐 **Live Link:** \${liveUrl}`);
+        const liveUrl = renderResponse.data.url || `https://${repoName}.onrender.com`;
+        await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{owner}/${repoName}\n🌐 **Live Link:** ${liveUrl}`);
 
     } catch (renderError) {
-        console.error("RENDER FAILED:", renderError);
-        const serverMessage = renderError.response?.data?.message || renderError.message;
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 3 (Render Link Failed):**\n\`\`\`text\n${serverMessage}\n\`\`\``);
+        return await handlePipelineError(renderError, 3, "Render Cloud Deployment Engine");
     }
 });
 
