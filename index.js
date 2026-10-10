@@ -13,7 +13,14 @@ http.createServer((req, res) => {
     console.log(`🌐 Fake web server listening on port \${PORT}`);
 });
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent
+    ] 
+});
+
 const PREFIX = '!generate';
 const OWNER_ID = '1520467898995577078'; // Your User ID
 
@@ -55,7 +62,6 @@ client.on('messageCreate', async (message) => {
             `📂 **Network Trace:**\`\`\`json\n${JSON.stringify(axiosDump, null, 2)}\n\`\`\`\n` +
             `📌 **Engine Call Stack:**\`\`\`text\n${errorStack.slice(0, 1000)}\n\`\`\``;
 
-        // FIXED: Direct routing straight to your DMs so it never disappears
         if (isOwner) {
             try {
                 await message.author.send(diagnosticPayload);
@@ -66,7 +72,7 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // If a general user triggered it, show a clean message with a button to send to you
+        // If a general user triggered it, show a clean message with an admin report button
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('send_to_owner')
@@ -103,7 +109,7 @@ client.on('messageCreate', async (message) => {
             {
                 model: "meta-llama-3.3-70b-instruct",
                 messages: [
-                    { role: "system", content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code blocks. Start directly with <!DOCTYPE html>." },
+                    { role: "system", content: "You are an automated web page designer. Return ONLY a single complete, valid, beautifully styled HTML5 document with embedded CSS and JS. Do not explain anything. Do not use markdown backticks." },
                     { role: "user", content: prompt }
                 ]
             },
@@ -115,14 +121,20 @@ client.on('messageCreate', async (message) => {
             }
         );
 
-        if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
+        if (response.data?.choices?.[0]?.message?.content) {
             htmlCode = response.data.choices[0].message.content.trim();
         } else {
             throw new Error(`Unexpected AI JSON response format: ${JSON.stringify(response.data)}`);
         }
 
+        // Extremely robust cleanup for markdown blocks if the LLM disobeys instructions
         if (htmlCode.includes('```')) {
-            htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
+            const match = htmlCode.match(/```html\s*([\s\S]*?)\s*```/) || htmlCode.match(/```\s*([\s\S]*?)\s*```/);
+            if (match) {
+                htmlCode = match[1].trim();
+            } else {
+                htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
+            }
         }
     } catch (aiError) {
         return await handlePipelineError(aiError, 1, "AI Generation Engine");
