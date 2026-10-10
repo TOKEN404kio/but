@@ -1,25 +1,30 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits } from 'discord.js';
-import ModelClient from '@azure-rest/ai-inference';
-import { AzureKeyCredential } from '@azure/core-auth';
+import { OpenAI } from 'openai';
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
 import http from 'http';
 
-// --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
+// --- KEEP RENDER WEB SERVICE ALIVE ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Discord Bot is running 24/7!\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Fake web server listening on port ${PORT}`);
+    console.log(`🌐 Web check handler online on port ${PORT}`);
+});
+
+// Use GitHub's standard universal API routing to fix the 301 redirect error
+const aiClient = new OpenAI({
+  baseURL: "https://azure.com",
+  apiKey: process.env.GITHUB_TOKEN
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const PREFIX = '!generate';
 
 client.once('ready', () => {
-    console.log(`🤖 Bot is online and ready using GitHub Models!`);
+    console.log(`🤖 Bot is online and listening via the standard OpenAI package!`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -27,51 +32,40 @@ client.on('messageCreate', async (message) => {
 
     const prompt = message.content.replace(PREFIX, '').trim();
     if (!prompt) {
-        return message.reply('Please provide a description!');
+        return message.reply('Please provide a description for the website!');
     }
 
-    const statusMessage = await message.reply('⏳ **Step 1/3:** Asking AI to write the raw code...');
+    const statusMessage = await message.reply('⏳ **Step 1/3:** Asking AI to write your source code...');
     let htmlCode = '';
     let repoName = `user-site-${Date.now()}`;
     let owner = '';
 
-    // === DIAGNOSTIC STEP 1: AI GENERATION ===
+    // === STEP 1: GENERATE SITE CODE ===
     try {
-        const aiClient = ModelClient(
-          "https://azure.com",
-          new AzureKeyCredential(process.env.GITHUB_TOKEN || '')
-        );
-
-        const response = await aiClient.path("/chat/completions").post({
-          body: {
-            model: "Mistral-large-2411", 
+        const response = await aiClient.chat.completions.create({
+            model: "meta-llama-3.3-70b-instruct", 
             messages: [
               { 
                 role: "system", 
-                content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code block formatting like ```html." 
+                content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code block formatting like ```html. Start directly with <!DOCTYPE html>." 
               },
               { role: "user", content: prompt }
             ]
-          }
         });
 
-        if (response.status !== "200") {
-            throw new Error(`GitHub AI responded with error status: ${response.status}`);
-        }
-
-        htmlCode = response.body.choices.message.content.trim();
+        htmlCode = response.choices[0].message.content.trim();
 
         if (htmlCode.includes('```')) {
             htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
         }
     } catch (aiError) {
-        console.error("AI FAILED:", aiError);
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n\${aiError.message || aiError}\n\`\`\`\n*Tip: Check if your GITHUB_TOKEN environment variable is set up correctly in Render.*`);
+        console.error("AI GENERATION STEP FAILED:", aiError);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n${aiError.message || aiError}\n\`\`\``);
     }
 
-    // === DIAGNOSTIC STEP 2: GITHUB PUSH ===
+    // === STEP 2: PUSH RAW FILE TO GITHUB ===
     try {
-        await statusMessage.edit('⏳ **Step 2/3:** Creating a new GitHub repository...');
+        await statusMessage.edit('⏳ **Step 2/3:** Setting up your public GitHub repository...');
         
         const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
         
@@ -91,20 +85,20 @@ client.on('messageCreate', async (message) => {
             content: Buffer.from(htmlCode).toString('base64')
         });
     } catch (githubError) {
-        console.error("GITHUB FAILED:", githubError);
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n\${githubError.message || githubError}\n\`\`\`\n*Tip: Ensure your GitHub Token has full 'repo' permission checkboxes enabled.*`);
+        console.error("GITHUB INTERACTION FAILED:", githubError);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n${githubError.message || githubError}\n\`\`\``);
     }
 
-    // === DIAGNOSTIC STEP 3: RENDER DEPLOYMENT ===
+    // === STEP 3: DEPLOY HOSTING SERVICE VIA RENDER ===
     try {
-        await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
+        await statusMessage.edit('⏳ **Step 3/3:** Sending production build to Render...');
 
         const renderResponse = await axios.post(
             'https://render.com',
             {
                 type: 'static_site',
                 name: repoName,
-                repo: `https://github.com{owner}/${repoName}`,
+                repo: `https://github.com/\({owner}/\){repoName}`,
                 autoDeploy: 'yes',
                 serviceDetails: {
                     publishDir: '.' 
@@ -112,20 +106,20 @@ client.on('messageCreate', async (message) => {
             },
             {
                 headers: {
-                    Authorization: `Bearer ${process.env.RENDER_API_KEY}`,
+                    Authorization: `Bearer \${process.env.RENDER_API_KEY}`,
                     'Content-Type': 'application/json'
                 }
             }
         );
 
-        const liveUrl = renderResponse.data.serviceDetails.url || `https://${repoName}.onrender.com`;
+        const liveUrl = renderResponse.data.serviceDetails.url || `https://\${repoName}.onrender.com`;
 
-        await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{owner}/${repoName}\n🌐 **Live Link:** ${liveUrl}`);
+        await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com/\({owner}/\){repoName}\n🌐 **Live Link:** \${liveUrl}`);
 
     } catch (renderError) {
-        console.error("RENDER FAILED:", renderError);
+        console.error("RENDER DEPLOYMENT FAILED:", renderError);
         const serverMessage = renderError.response?.data?.message || renderError.message;
-        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 3 (Render Link Failed):**\n\`\`\`text\n\${serverMessage}\n\`\`\`\n*Tip: Verify your RENDER_API_KEY inside Render Environment dashboard is exact.*`);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 3 (Render Link Failed):**\n\`\`\`text\n${serverMessage}\n\`\`\``);
     }
 });
 
