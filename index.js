@@ -10,7 +10,7 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('Discord Bot is running 24/7!\n');
 }).listen(PORT, () => {
-    console.log(`🌐 Fake web server listening on port \${PORT}`);
+    console.log("🌐 Fake web server listening on port " + PORT);
 });
 
 const client = new Client({ 
@@ -25,7 +25,7 @@ const PREFIX = '!generate';
 const OWNER_ID = '1520467898995577078'; // Your User ID
 
 client.once('clientReady', () => {
-    console.log(`🤖 Private Admin Diagnostic Bot Online!`);
+    console.log("🤖 Private Admin Diagnostic Bot Online!");
 });
 
 client.on('messageCreate', async (message) => {
@@ -40,36 +40,45 @@ client.on('messageCreate', async (message) => {
     const statusMessage = await message.reply('⏳ **Step 1/3:** Asking GitHub AI to write the raw code...');
     
     let htmlCode = '';
-    let repoName = `user-site-\${Date.now()}`;
+    let repoName = "user-site-" + Date.now();
     let owner = '';
 
     // === FUNCTION TO CAPTURE DEEP SYSTEM DIAGNOSTICS ===
     async function handlePipelineError(errorObj, stepNumber, stepName) {
-        console.error(`CRASH AT STEP \${stepNumber}:`, errorObj);
+        console.error("CRASH AT STEP " + stepNumber + ":", errorObj);
 
         const errorStack = errorObj.stack || "No call stack available";
-        const axiosDump = errorObj.config ? {
-            targetUrl: errorObj.config.url,
-            methodUsed: errorObj.config.method,
-            sentPayload: errorObj.config.data,
-            authHeaderPresent: !!errorObj.config.headers?.['Authorization']
-        } : "Not an Axios network request error";
+        let targetUrl = "N/A";
+        let methodUsed = "N/A";
+        let responseStatus = "N/A";
+        let responseDataDump = "N/A";
 
-        // FIX: Rebuilt string template matching using correct standard literal templates (${})
-        const diagnosticPayload = `🚨 **DEEP DIAGNOSTIC REPORT (STEP stepNumber - {stepName})**\n` +
-            `👤 **Triggered By:** <@message.author.id> ({message.author.username})\n` +
-            `💬 **Prompt Used:** \`${prompt}\`\n\n` +
-            `❌ **Raw Message:** \`${errorObj.message || errorObj}\`\n` +
-            `📂 **Network Trace:**\`\`\`json\n${JSON.stringify(axiosDump, null, 2)}\n\`\`\`\n` +
-            `📌 **Engine Call Stack:**\`\`\`text\n${errorStack.slice(0, 1000)}\n\`\`\``;
+        if (errorObj.config) {
+            targetUrl = errorObj.config.url || "N/A";
+            methodUsed = errorObj.config.method || "N/A";
+        }
+        if (errorObj.response) {
+            responseStatus = errorObj.response.status || "N/A";
+            responseDataDump = JSON.stringify(errorObj.response.data, null, 2);
+        }
+
+        // Defensively built with standard concatenation to ensure it can NEVER break
+        let diagnosticPayload = "🚨 **DEEP DIAGNOSTIC REPORT (STEP " + stepNumber + " - " + stepName + ")**\n" +
+            "👤 **Triggered By:** <@" + message.author.id + "> (" + message.author.username + ")\n" +
+            "💬 **Prompt Used:** `" + prompt + "`\n\n" +
+            "❌ **Raw Error Message:** `" + errorObj.message + "`\n" +
+            "📡 **API HTTP Status:** " + responseStatus + "\n" +
+            "🌐 **Target Endpoint:** " + targetUrl + " (" + methodUsed + ")\n\n" +
+            "📦 **API Error Response Data:**\n```json\n" + responseDataDump.slice(0, 500) + "\n```\n" +
+            "📌 **Call Stack Summary:**\n```text\n" + errorStack.slice(0, 500) + "\n```";
 
         if (isOwner) {
             try {
                 await message.author.send(diagnosticPayload);
-                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** I have sent the deep technical logs straight to your private DMs! 📩`);
+                await statusMessage.edit("❌ **Step " + stepNumber + " Failed.** I have successfully sent the deep technical logs straight to your private DMs! 📩");
             } catch (dmErr) {
-                console.error("DM Error details:", dmErr);
-                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** The pipeline crashed and structural logging errors occurred when processing logs.`);
+                console.error("Failed to send DM logs:", dmErr);
+                await statusMessage.edit("❌ **Step " + stepNumber + " Failed.** I could not DM you the logs. Check the server console in your Render Dashboard to read the raw error error.");
             }
             return;
         }
@@ -82,7 +91,7 @@ client.on('messageCreate', async (message) => {
         );
 
         const publicAlert = await statusMessage.edit({
-            content: `❌ **An unexpected error occurred while compiling your site build at Step ${stepNumber}.** The administrator has been logged.`,
+            content: "❌ **An unexpected error occurred while compiling your site build at Step " + stepNumber + ".** The administrator has been logged.",
             components: [row]
         });
 
@@ -116,22 +125,21 @@ client.on('messageCreate', async (message) => {
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                    'Authorization': "Bearer " + process.env.GITHUB_TOKEN,
                     'Content-Type': 'application/json'
                 }
             }
         );
 
-        // FIX: Correctly targeting array index [0] to fetch chat completion details
-        if (response.data?.choices?.[0]?.message?.content) {
+        if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
             htmlCode = response.data.choices[0].message.content.trim();
         } else {
-            throw new Error(`Unexpected AI JSON response format: ${JSON.stringify(response.data)}`);
+            throw new Error("Unexpected AI JSON response format structure.");
         }
 
         if (htmlCode.includes('```')) {
-            const match = htmlCode.match(/```html\s*([\s\S]*?)\s*```/) || htmlCode.match(/```\s*([\s\S]*?)\s*```/);
-            if (match) {
+            const match = htmlCode.match(/```html\s*([\s\(\S\)]*?)\s*```/) || htmlCode.match(/```\s*([\s\(\S\)]*?)\s*```/);
+            if (match && match[1]) {
                 htmlCode = match[1].trim();
             } else {
                 htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
@@ -155,7 +163,7 @@ client.on('messageCreate', async (message) => {
         owner = repoSetup.data.owner.login;
 
         await octokit.repos.createOrUpdateFileContents({
-            owner,
+            owner: owner,
             repo: repoName,
             path: 'index.html',
             message: 'Initial website build from Discord',
@@ -174,7 +182,7 @@ client.on('messageCreate', async (message) => {
             {
                 type: 'static_site',
                 name: repoName,
-                repo: `https://github.com{owner}/${repoName}`,
+                repo: "https://github.com" + owner + "/" + repoName,
                 autoDeploy: 'yes',
                 staticSiteDetails: {
                     publishDir: '.'
@@ -182,15 +190,15 @@ client.on('messageCreate', async (message) => {
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${process.env.RENDER_API_KEY}`,
+                    'Authorization': "Bearer " + process.env.RENDER_API_KEY,
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 }
             }
         );
 
-        const liveUrl = renderResponse.data.url || `https://${repoName}.onrender.com`;
-        await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{owner}/${repoName}\n🌐 **Live Link:** ${liveUrl}`);
+        const liveUrl = renderResponse.data.url || "https://" + repoName + ".onrender.com";
+        await statusMessage.edit("🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com" + owner + "/" + repoName + "\n🌐 **Live Link:** " + liveUrl);
 
     } catch (renderError) {
         return await handlePipelineError(renderError, 3, "Render Cloud Deployment Engine");
