@@ -4,7 +4,7 @@ import ModelClient from '@azure-rest/ai-inference';
 import { AzureKeyCredential } from '@azure/core-auth';
 import { Octokit } from '@octokit/rest';
 import axios from 'axios';
-import http from 'http'; // Built-in Node tool
+import http from 'http';
 
 // --- TRICK RENDER WEBSERVICE TO STAY ALIVE ---
 const PORT = process.env.PORT || 10000;
@@ -14,16 +14,8 @@ http.createServer((req, res) => {
 }).listen(PORT, () => {
     console.log(`🌐 Fake web server listening on port ${PORT}`);
 });
-// ----------------------------------------------
-
-const aiClient = ModelClient(
-  "https://azure.com",
-  new AzureKeyCredential(process.env.GITHUB_TOKEN)
-);
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
-
 const PREFIX = '!generate';
 
 client.once('ready', () => {
@@ -39,15 +31,24 @@ client.on('messageCreate', async (message) => {
     }
 
     const statusMessage = await message.reply('⏳ **Step 1/3:** Asking AI to write the raw code...');
+    let htmlCode = '';
+    let repoName = `user-site-${Date.now()}`;
+    let owner = '';
 
+    // === DIAGNOSTIC STEP 1: AI GENERATION ===
     try {
+        const aiClient = ModelClient(
+          "https://azure.com",
+          new AzureKeyCredential(process.env.GITHUB_TOKEN || '')
+        );
+
         const response = await aiClient.path("/chat/completions").post({
           body: {
-            model: "meta-llama-3.3-70b-instruct", 
+            model: "Mistral-large-2411", 
             messages: [
               { 
                 role: "system", 
-                content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include any introductory sentences, explanations, or markdown code block formatting like ```html. Start directly with <!DOCTYPE html>." 
+                content: "You are an automated code generator. You must ONLY output a single, complete HTML document containing internal CSS and Javascript. Do NOT include markdown code block formatting like ```html." 
               },
               { role: "user", content: prompt }
             ]
@@ -55,22 +56,24 @@ client.on('messageCreate', async (message) => {
         });
 
         if (response.status !== "200") {
-          throw new Error("AI generation failed");
+            throw new Error(`GitHub AI responded with error status: ${response.status}`);
         }
 
-        let htmlCode = response.body.choices.message.content.trim();
+        htmlCode = response.body.choices.message.content.trim();
 
         if (htmlCode.includes('```')) {
             htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
         }
+    } catch (aiError) {
+        console.error("AI FAILED:", aiError);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 1 (AI Generation Failed):**\n\`\`\`text\n\${aiError.message}\n\`\`\`\n*Tip: Check if your GITHUB_TOKEN environment variable is set up correctly in Render.*`);
+    }
 
-        if (!htmlCode.startsWith('<!DOCTYPE') && !htmlCode.startsWith('<html')) {
-            htmlCode = `<!DOCTYPE html><html><head><title>Generated Site</title></head><body>${htmlCode}</body></html>`;
-        }
-
+    // === DIAGNOSTIC STEP 2: GITHUB PUSH ===
+    try {
         await statusMessage.edit('⏳ **Step 2/3:** Creating a new GitHub repository...');
-
-        const repoName = `user-site-${Date.now()}`;
+        
+        const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
         
         const repoSetup = await octokit.repos.createForAuthenticatedUser({
             name: repoName,
@@ -78,7 +81,7 @@ client.on('messageCreate', async (message) => {
             auto_init: true
         });
 
-        const owner = repoSetup.data.owner.login;
+        owner = repoSetup.data.owner.login;
 
         await octokit.repos.createOrUpdateFileContents({
             owner,
@@ -87,7 +90,13 @@ client.on('messageCreate', async (message) => {
             message: 'Initial website build from Discord',
             content: Buffer.from(htmlCode).toString('base64')
         });
+    } catch (githubError) {
+        console.error("GITHUB FAILED:", githubError);
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 2 (GitHub Upload Failed):**\n\`\`\`text\n\${githubError.message}\n\`\`\`\n*Tip: Ensure your GitHub Token has full 'repo' permission checkboxes enabled.*`);
+    }
 
+    // === DIAGNOSTIC STEP 3: RENDER DEPLOYMENT ===
+    try {
         await statusMessage.edit('⏳ **Step 3/3:** Deploying live to Render...');
 
         const renderResponse = await axios.post(
@@ -113,9 +122,10 @@ client.on('messageCreate', async (message) => {
 
         await statusMessage.edit(`🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com{owner}/${repoName}\n🌐 **Live Link:** ${liveUrl}`);
 
-    } catch (error) {
-        console.error(error);
-        await statusMessage.edit('❌ An error occurred while generating or deploying your website.');
+    } catch (renderError) {
+        console.error("RENDER FAILED:", renderError);
+        const serverMessage = renderError.response?.data?.message || renderError.message;
+        return await statusMessage.edit(`❌ **CRITICAL ERROR AT STEP 3 (Render Link Failed):**\n\`\`\`text\n\${serverMessage}\n\`\`\`\n*Tip: Verify your RENDER_API_KEY inside Render Environment dashboard is exact.*`);
     }
 });
 
