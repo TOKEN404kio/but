@@ -3,5 +3,12 @@
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
-  "dependencies": {}
+  "dependencies": {
+    "@azure-rest/ai-inference": "^1.0.0-beta.1",
+    "@azure/core-auth": "^1.5.0",
+    "@octokit/rest": "^21.0.0",
+    "axios": "^1.7.0",
+    "discord.js": "^14.16.0",
+    "dotenv": "^16.4.0"
+  }
 }
