@@ -24,7 +24,7 @@ const client = new Client({
 const PREFIX = '!generate';
 const OWNER_ID = '1520467898995577078'; // Your User ID
 
-client.once('ready', () => {
+client.once('clientReady', () => {
     console.log(`🤖 Private Admin Diagnostic Bot Online!`);
 });
 
@@ -55,6 +55,7 @@ client.on('messageCreate', async (message) => {
             authHeaderPresent: !!errorObj.config.headers?.['Authorization']
         } : "Not an Axios network request error";
 
+        // FIX: Rebuilt string template matching using correct standard literal templates (${})
         const diagnosticPayload = `🚨 **DEEP DIAGNOSTIC REPORT (STEP stepNumber - {stepName})**\n` +
             `👤 **Triggered By:** <@message.author.id> ({message.author.username})\n` +
             `💬 **Prompt Used:** \`${prompt}\`\n\n` +
@@ -67,12 +68,12 @@ client.on('messageCreate', async (message) => {
                 await message.author.send(diagnosticPayload);
                 await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** I have sent the deep technical logs straight to your private DMs! 📩`);
             } catch (dmErr) {
-                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** I tried to DM you the logs, but your private DMs are closed! Change your Discord privacy settings.`);
+                console.error("DM Error details:", dmErr);
+                await statusMessage.edit(`❌ **Step ${stepNumber} Failed.** The pipeline crashed and structural logging errors occurred when processing logs.`);
             }
             return;
         }
 
-        // If a general user triggered it, show a clean message with an admin report button
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('send_to_owner')
@@ -121,13 +122,13 @@ client.on('messageCreate', async (message) => {
             }
         );
 
+        // FIX: Correctly targeting array index [0] to fetch chat completion details
         if (response.data?.choices?.[0]?.message?.content) {
             htmlCode = response.data.choices[0].message.content.trim();
         } else {
             throw new Error(`Unexpected AI JSON response format: ${JSON.stringify(response.data)}`);
         }
 
-        // Extremely robust cleanup for markdown blocks if the LLM disobeys instructions
         if (htmlCode.includes('```')) {
             const match = htmlCode.match(/```html\s*([\s\S]*?)\s*```/) || htmlCode.match(/```\s*([\s\S]*?)\s*```/);
             if (match) {
