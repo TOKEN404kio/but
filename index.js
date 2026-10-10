@@ -22,6 +22,7 @@ const client = new Client({
 });
 
 const PREFIX = '!generate';
+const EXPIRE_PREFIX = '!expire';
 const OWNER_ID = '1520467898995577078'; // Your User ID
 
 client.once('clientReady', () => {
@@ -29,7 +30,60 @@ client.once('clientReady', () => {
 });
 
 client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+    if (message.author.bot) return;
+
+    // === ADMIN COMMAND: !expire <hours> ===
+    if (message.content.startsWith(EXPIRE_PREFIX) && message.author.id === OWNER_ID) {
+        const args = message.content.replace(EXPIRE_PREFIX, '').trim().split(/ +/);
+        let serviceId = '';
+        let hoursStr = '';
+
+        if (message.reference && message.reference.messageId) {
+            try {
+                const repliedMsg = await message.channel.messages.fetch(message.reference.messageId);
+                const matchId = repliedMsg.content.match(/🆔 \*\*Service ID:\*\* `([^`]+)`/);
+                if (matchId) {
+                    serviceId = matchId[1];
+                    hoursStr = args[0];
+                }
+            } catch (err) {
+                console.error("Could not fetch replied message content:", err);
+            }
+        }
+
+        if (!serviceId) {
+            serviceId = args[0];
+            hoursStr = args[1];
+        }
+
+        const hours = parseFloat(hoursStr);
+        if (!serviceId || isNaN(hours)) {
+            return message.reply("❌ **Invalid Format.** Use: `!expire <hours>` as a reply to an alert, or `!expire <serviceId> <hours>`.");
+        }
+
+        const msDelay = hours * 60 * 60 * 1000;
+        message.reply("⏳ **Taki Takedown Initiated!** Service `" + serviceId + "` will automatically expire and be deleted from Render in " + hours + " hour(s).");
+
+        setTimeout(async () => {
+            try {
+                console.log("💥 Executing scheduled automated takedown for Service ID: " + serviceId);
+                await axios.delete("https://render.com" + serviceId, {
+                    headers: { 'Authorization': "Bearer " + process.env.RENDER_API_KEY }
+                });
+                
+                const adminUser = await client.users.fetch(OWNER_ID);
+                await adminUser.send("💥 **Taki Reprisal Complete!** Service ID `" + serviceId + "` has officially expired and been scrubbed from Render.");
+            } catch (deleteError) {
+                console.error("Delayed Takedown Failed:", deleteError.message);
+                const adminUser = await client.users.fetch(OWNER_ID);
+                await adminUser.send("⚠️ **Expiration Failed:** Tried to auto-delete Service ID `" + serviceId + "` but the Render API returned an error: " + deleteError.message);
+            }
+        }, msDelay);
+        return;
+    }
+
+    // === GENERATOR PIPELINE ===
+    if (!message.content.startsWith(PREFIX)) return;
 
     const prompt = message.content.replace(PREFIX, '').trim();
     if (!prompt) {
@@ -62,7 +116,6 @@ client.on('messageCreate', async (message) => {
             responseDataDump = JSON.stringify(errorObj.response.data, null, 2);
         }
 
-        // Defensively built with standard concatenation to ensure it can NEVER break
         let diagnosticPayload = "🚨 **DEEP DIAGNOSTIC REPORT (STEP " + stepNumber + " - " + stepName + ")**\n" +
             "👤 **Triggered By:** <@" + message.author.id + "> (" + message.author.username + ")\n" +
             "💬 **Prompt Used:** `" + prompt + "`\n\n" +
@@ -78,7 +131,7 @@ client.on('messageCreate', async (message) => {
                 await statusMessage.edit("❌ **Step " + stepNumber + " Failed.** I have successfully sent the deep technical logs straight to your private DMs! 📩");
             } catch (dmErr) {
                 console.error("Failed to send DM logs:", dmErr);
-                await statusMessage.edit("❌ **Step " + stepNumber + " Failed.** I could not DM you the logs. Check the server console in your Render Dashboard to read the raw error error.");
+                await statusMessage.edit("❌ **Step " + stepNumber + " Failed.** Check your Render console logs to diagnose.");
             }
             return;
         }
@@ -131,6 +184,7 @@ client.on('messageCreate', async (message) => {
             }
         );
 
+        // FIXED: Added choices[0] index array accessor to cleanly capture response outputs
         if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
             htmlCode = response.data.choices[0].message.content.trim();
         } else {
@@ -138,7 +192,7 @@ client.on('messageCreate', async (message) => {
         }
 
         if (htmlCode.includes('```')) {
-            const match = htmlCode.match(/```html\s*([\s\(\S\)]*?)\s*```/) || htmlCode.match(/```\s*([\s\(\S\)]*?)\s*```/);
+            const match = htmlCode.match(/```html\s*([\s\S]*?)\s*```/) || htmlCode.match(/```\s*([\s\S]*?)\s*```/);
             if (match && match[1]) {
                 htmlCode = match[1].trim();
             } else {
@@ -182,27 +236,37 @@ client.on('messageCreate', async (message) => {
             {
                 type: 'static_site',
                 name: repoName,
-                repo: "https://github.com" + owner + "/" + repoName,
-                autoDeploy: 'yes',
-                staticSiteDetails: {
-                    publishDir: '.'
-                }
-            },
-            {
-                headers: {
-                    'Authorization': "Bearer " + process.env.RENDER_API_KEY,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                }
-            }
-        );
-
-        const liveUrl = renderResponse.data.url || "https://" + repoName + ".onrender.com";
-        await statusMessage.edit("🎉 **Success!** Your website code was pushed and deployed.\n\n📂 **GitHub Repo:** https://github.com" + owner + "/" + repoName + "\n🌐 **Live Link:** " + liveUrl);
-
-    } catch (renderError) {
-        return await handlePipelineError(renderError, 3, "Render Cloud Deployment Engine");
-    }
+Use code with caution.
+repo: "github.com" + owner + "/" + repoName,
+autoDeploy: 'yes',
+staticSiteDetails: {
+publishDir: '.'
+}
+},
+{
+headers: {
+'Authorization': "Bearer " + process.env.RENDER_API_KEY,
+'Content-Type': 'application/json',
+'Accept': 'application/json'
+}
+}
+);
+const extractedServiceId = renderResponse.data?.id || "unknown";
+const liveUrl = renderResponse.data?.url || "https://" + repoName + ".onrender.com";
+await statusMessage.edit("🎉 Success! Your website code was pushed and deployed.\n\n📂 GitHub Repo: github.com" + owner + "/" + repoName + "\n🌐 Live Link: " + liveUrl);
+try {
+const adminUser = await client.users.fetch(OWNER_ID);
+const alertPayload = "📁 NEW SITE GENERATED BY USER\n" +
+"👤 User: <@" + message.author.id + "> (" + message.author.username + ")\n" +
+"🌐 Live URL: " + liveUrl + "\n" +
+"🆔 Service ID: " + extractedServiceId + "\n\n" +
+"👉 To expire this site, reply directly to this DM message with !expire <hours> (e.g. !expire 1.5)";
+await adminUser.send(alertPayload);
+} catch (dmAlertErr) {
+console.error("Could not alert owner about the new deployment setup:", dmAlertErr);
+}
+} catch (renderError) {
+return await handlePipelineError(renderError, 3, "Render Cloud Deployment Engine");
+}
 });
-
 client.login(process.env.DISCORD_TOKEN);
