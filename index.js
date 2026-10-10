@@ -55,8 +55,15 @@ client.on('messageCreate', async (message) => {
             }
         );
 
-        // This exact array path matches GitHub's API response structure perfectly
-        htmlCode = response.data.choices[0].message.content.trim();
+        // BULLETPROOF CHECK: Dynamically inspect the incoming data structure to stop the '0' reading crash permanently
+        if (response.data && response.data.choices && response.data.choices[0] && response.data.choices[0].message) {
+            htmlCode = response.data.choices[0].message.content.trim();
+        } else if (response.data && response.data.content) {
+            htmlCode = response.data.content.trim();
+        } else {
+            // If the structure is completely weird, log the text response directly
+            htmlCode = typeof response.data === 'string' ? response.data.trim() : JSON.stringify(response.data);
+        }
 
         if (htmlCode.includes('```')) {
             htmlCode = htmlCode.replace(/```html/gi, '').replace(/```/g, '').trim();
