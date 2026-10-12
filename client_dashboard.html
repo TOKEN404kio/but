@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS Client Terminal Panel</title>
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background-color: #05070f; color: #f3f4f6; margin: 0; padding: 20px; box-sizing: border-box; }
+        .jarvis-grid { display: grid; grid-template-columns: 320px 1fr; gap: 20px; max-width: 1600px; margin: 0 auto; }
+        header { grid-column: span 2; background: linear-gradient(90deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid #1e293b; border-radius: 12px; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .title { font-size: 20px; font-weight: 800; color: #38bdf8; display: flex; align-items: center; gap: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+        .badge { background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 8px 18px; border-radius: 30px; font-size: 14px; font-weight: 700; font-family: monospace; }
+        .stack { display: flex; flex-direction: column; gap: 20px; }
+        .panel { background-color: #0b0f19; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+        .panel::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; background: #38bdf8; }
+        .p-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #9ca3af; font-weight: 800; margin-bottom: 15px; }
+        .graph-panel { background-color: #0b0f19; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; height: 200px; }
+        .log-box { background-color: #0b0f19; border: 1px solid #1e293b; border-radius: 12px; padding: 25px; display: flex; flex-direction: column; }
+        .viewport { background-color: #02040a; border: 1px solid #1e293b; border-radius: 8px; padding: 20px; height: 350px; overflow-y: auto; font-family: monospace; font-size: 13px; line-height: 1.6; }
+        .meta-line { font-family: monospace; font-size: 13px; margin: 8px 0; color: #9ca3af; }
+        .meta-line strong { color: #38bdf8; }
+        button { background: #ef4444; border: none; color: #f3f4f6; font-weight: 700; padding: 10px 16px; border-radius: 6px; cursor: pointer; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; }
+        button:hover { background: #dc2626; }
+    </style>
+</head>
+<body>
+    <div class="jarvis-grid">
+        <header>
+            <div class="title">🤖 client control panel: <span id="client-name">Loading...</span></div>
+            <div class="badge">STATUS: <span id="status-txt">⏳ SYNC</span></div>
+        </header>
+        <div class="stack">
+            <div class="panel">
+                <div class="p-title">Assigned Parameters</div>
+                <div class="meta-line">Active Node: <strong id="node-val">Resolving...</strong></div>
+                <div class="meta-line">Invite Code: <strong id="inv-val">None</strong></div>
+            </div>
+            <div class="panel">
+                <div class="p-title">Session Controls</div>
+                <button onclick="logout()">Terminate Session</button>
+            </div>
+        </div>
+        <div class="stack">
+            <div class="graph-panel">
+                <div class="p-title">Telemetry Index Metrics</div>
+                <div style="width: 100%; height: calc(100% - 25px);"><canvas id="chart"></canvas></div>
+            </div>
+            <div class="log-box">
+                <div class="p-title" style="margin-bottom:15px; font-size:14px; color:#f3f4f6;">📝 Isolated Server Activity Terminal Stream</div>
+                <div class="viewport" id="viewport">
+                    <div style="color: #4b5563;">Awaiting authentication handshake packets...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const token = localStorage.getItem("jarvis_tenant_token");
+        if (!token) window.location.href = "./login.html";
+        const API_BASE = "https://onrender.com";
+        let chart, labels = Array(10).fill(""), cpu = Array(10).fill(0), ram = Array(10).fill(0);
+        function initChart() {
+            const ctx = document.getElementById('chart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'CPU', data: cpu, borderColor: '#38bdf8', borderWidth: 2, tension: 0.4, pointRadius: 0 },
+                        { label: 'RAM', data: ram, borderColor: '#a855f7', borderWidth: 2, tension: 0.4, pointRadius: 0 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { display: false }, y: { min: 0, max: 100, ticks: { color: '#6b7280' }, grid: { color: '#1e293b' } } } }
+            });
+        }
+        async function syncData() {
+            try {
+                const res = await fetch(API_BASE + token);
+                if (!res.ok) throw new Error();
+                const d = await res.json();
+                document.getElementById("client-name").innerText = d.client_name;
+                document.getElementById("status-txt").innerText = d.status;
+                document.getElementById("status-txt").style.color = d.status === "Online" ? "#10b981" : "#ef4444";
+                document.getElementById("node-val").innerText = d.ping;
+                document.getElementById("inv-val").innerText = d.assigned_invite;
+                const vp = document.getElementById("viewport");
+                vp.innerHTML = "";
+                if (!d.logs || d.logs.length === 0) {
+                    vp.innerHTML = `<div style="color: #4b5563; padding:10px;">📡 Waiting for local server log packets...</div>`;
+                } else {
+                    d.logs.forEach(l => {
+                        vp.innerHTML += `<div style="padding:6px 0; border-bottom:1px solid #1f2937; color:#9ca3af;">[${l.time}] ${l.user} &rarr; <span style="color:#38bdf8;">${l.action}</span></div>`;
+                    });
+                }
+                const c = parseFloat(d.telemetry.cpu_utilization) || 0;
+                const r = parseFloat(d.telemetry.memory_utilization) || 0;
+                labels.push(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+                cpu.push(c);
+                ram.push(r);
+                if (labels.length > 10) { labels.shift(); cpu.shift(); ram.shift(); }
+                chart.update();
+            } catch {
+                localStorage.removeItem("jarvis_tenant_token");
+                window.location.href = "./login.html";
+            }
+        }
+        function logout() { localStorage.removeItem("jarvis_tenant_token"); window.location.href = "./login.html"; }
+        document.addEventListener("DOMContentLoaded", () => { initChart(); setInterval(syncData, 5000); syncData(); });
+    </script>
+</body>
+</html>
