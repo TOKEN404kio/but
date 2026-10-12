@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS - Gateway Portal</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background-color: #05070f; color: #f3f4f6; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .login-card { background-color: #0b0f19; border: 1px solid #1e293b; border-radius: 12px; padding: 4px 30px 30px 30px; width: 100%; max-width: 360px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); position: relative; }
+        .login-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: #38bdf8; border-radius: 12px 12px 0 0; }
+        h2 { font-size: 20px; font-weight: 800; color: #38bdf8; letter-spacing: 0.05em; margin-bottom: 20px; text-transform: uppercase; text-align: center; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #9ca3af; font-weight: 800; margin-bottom: 6px; }
+        input { -webkit-box-sizing: border-box; box-sizing: border-box; width: 100%; background: #111827; border: 1px solid #1f2937; padding: 10px 12px; border-radius: 6px; color: #f3f4f6; font-size: 14px; }
+        input:focus { outline: none; border-color: #38bdf8; }
+        button { width: 100%; background: #38bdf8; border: none; color: #05070f; font-weight: 700; padding: 12px; border-radius: 6px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.05em; font-size: 13px; margin-top: 10px; }
+        button:hover { background: #0ea5e9; }
+        #err-msg { color: #ef4444; font-size: 13px; font-family: monospace; margin-top: 15px; text-align: center; font-weight: 600; min-height: 20px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>🤖 JARVIS Gateway</h2>
+        <div class="input-group">
+            <label>Username</label>
+            <input type="text" id="username" autocomplete="off">
+        </div>
+        <div class="input-group">
+            <label>Password</label>
+            <input type="password" id="password">
+        </div>
+        <button onclick="handleLogin()">Authenticate</button>
+        <div id="err-msg"></div>
+    </div>
+    <script>
+        const API_URL = "https://onrender.com";
+        async function handleLogin() {
+            const u = document.getElementById("username").value;
+            const p = document.getElementById("password").value;
+            const err = document.getElementById("err-msg");
+            err.innerText = "";
+            try {
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: u, password: p })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    localStorage.setItem("jarvis_tenant_token", data.dashboard_id);
+                    window.location.href = "./client_dashboard.html";
+                } else {
+                    err.innerText = "❌ Access Denied.";
+                }
+            } catch {
+                err.innerText = "❌ Pipeline Timeout.";
+            }
+        }
+    </script>
+</body>
+</html>
